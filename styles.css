@@ -2,9 +2,8 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: #0b0f1a;
+  background: #0d1117;
   overflow: hidden;
-  font-family: sans-serif;
 }
 
 #canvas-wrap {
