@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="de">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>Bagett (3D)</title>
+        <style>
+            /* Minimal: full-bleed canvas, no chrome */
+            html,body{height:100%;margin:0;background:#fff}
+            canvas{display:block;width:100vw;height:100vh}
+            .no-webgl{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#111;background:#fff;font-family:Segoe UI,Arial,sans-serif}
+        </style>
+    </head>
+    <body>
+        <script src="https://unpkg.com/three@0.154.0/build/three.min.js" crossorigin="anonymous"></script>
+        <script src="https://unpkg.com/three@0.154.0/examples/js/controls/OrbitControls.js" crossorigin="anonymous"></script>
+        <script src="https://unpkg.com/three@0.154.0/examples/js/loaders/FBXLoader.js" crossorigin="anonymous"></script>
+        <script>
+            function supportsWebGL(){ try{ var canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); }catch(e){return false} }
+            (function(){
+                if(!supportsWebGL()){
+                    document.body.innerHTML = '<div class="no-webgl">Dein Browser unterstützt kein WebGL. Bitte verwende einen aktuellen Browser (Chrome, Edge, Firefox).</div>';
+                    return;
+                }
+
+                var scene = new THREE.Scene();
+                scene.background = new THREE.Color(0xffffff);
+
+                var camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 5000);
+                camera.position.set(0,150,400);
+
+                var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.shadowMap.enabled = true;
+                document.body.appendChild(renderer.domElement);
+
+                // stronger, neutral lighting for clarity on white background
+                var hemi = new THREE.HemisphereLight(0xffffff, 0xcccccc, 1.0); hemi.position.set(0,200,0); scene.add(hemi);
+                var dir = new THREE.DirectionalLight(0xffffff, 1.2); dir.position.set(120,200,100); dir.castShadow = true; scene.add(dir);
+
+                var controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true; controls.enablePan = false; controls.minDistance = 80; controls.maxDistance = 2000;
+
+                var loader = new THREE.FBXLoader(); var model = null;
+                function fitCameraToObject(object, camera, controls, offset){
+                    offset = offset || 1.25;
+                    var box = new THREE.Box3().setFromObject(object);
+                    var size = box.getSize(new THREE.Vector3());
+                    var center = box.getCenter(new THREE.Vector3());
+                    var maxDim = Math.max(size.x, size.y, size.z);
+                    var fov = camera.fov * (Math.PI/180);
+                    var distance = Math.abs(maxDim/2 / Math.tan(fov/2)) * offset;
+                    // place camera along Z axis relative to center
+                    camera.position.copy(center);
+                    camera.position.z += distance;
+                    camera.near = Math.max(0.1, maxDim/100);
+                    camera.far = Math.max(5000, maxDim * 100);
+                    camera.updateProjectionMatrix();
+                    if(controls){ controls.target.copy(center); controls.update(); }
+                }
+                // Procedural baguette fallback (and default) — ensures something is always visible
+                function createProceduralBaguette(){
+                    var group = new THREE.Group();
+                    var length = 300, radius = 34;
+                    var mat = new THREE.MeshStandardMaterial({color:0xd9a86b, roughness:0.78, metalness:0.02});
+                    var cylGeo = new THREE.CylinderGeometry(radius, radius*0.9, length, 48, 1, true);
+                    var cyl = new THREE.Mesh(cylGeo, mat); cyl.castShadow = true; cyl.receiveShadow = true; group.add(cyl);
+                    // rounded end caps
+                    var capGeo = new THREE.SphereGeometry(radius, 32, 16);
+                    var cap1 = new THREE.Mesh(capGeo, mat); cap1.position.y = length/2; cap1.castShadow = true; cap1.receiveShadow = true; group.add(cap1);
+                    var cap2 = cap1.clone(); cap2.position.y = -length/2; group.add(cap2);
+                    // gentle highlight overlay
+                    var shineMat = new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.12, depthWrite:false});
+                    var shineGeo = new THREE.CylinderGeometry(radius*0.88, radius*0.88, length*0.98, 48,1,true);
+                    var shine = new THREE.Mesh(shineGeo, shineMat); shine.rotation.x = Math.PI/2; shine.renderOrder = 2; group.add(shine);
+                    // diagonal cuts simulated by thin dark boxes
+                    var cutMat = new THREE.MeshStandardMaterial({color:0x7a4a2a, roughness:0.9});
+                    for(var i=0;i<4;i++){
+                        var w = 6, h = 120, d = 8;
+                        var box = new THREE.BoxGeometry(w,h,d);
+                        var cut = new THREE.Mesh(box, cutMat);
+                        cut.position.y = (i-1.5) * 30;
+                        cut.position.x = 0; cut.position.z = radius - 6;
+                        cut.rotation.z = -0.5; // tilt
+                        cut.castShadow = false; cut.receiveShadow = false; group.add(cut);
+                    }
+                    // orient so long axis is vertical (cylinder default is Y axis)
+                    return group;
+                }
+
+                // create procedural mesh first so user always sees a baguette
+                var procedural = createProceduralBaguette(); scene.add(procedural); model = procedural; fitCameraToObject(procedural, camera, controls, 1.3);
+
+                // attempt to load FBX; if succeeds, replace the procedural mesh
+                loader.load('baguette.fbx', function(obj){
+                    try{
+                        // remove procedural
+                        if(procedural){ scene.remove(procedural); }
+                        model = obj;
+                        model.traverse(function(c){ if(c.isMesh){ c.castShadow=true; c.receiveShadow=true; if(c.material){ c.material.side = THREE.DoubleSide; c.material.needsUpdate=true; } } });
+                        scene.add(model);
+                        var box = new THREE.Box3().setFromObject(model); var size = new THREE.Vector3(); box.getSize(size); var maxD = Math.max(size.x||1,size.y||1,size.z||1); var scale = 220 / maxD; model.scale.set(scale,scale,scale); model.rotateZ(-Math.PI/2); fitCameraToObject(model, camera, controls, 1.3);
+                    }catch(e){ console.error('Error placing FBX', e); }
+                }, function(xhr){ /*progress*/ }, function(err){ console.warn('FBX load failed, keeping procedural object', err); });
+
+                window.addEventListener('resize', function(){ camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+                var prev = performance.now(); (function animate(t){ requestAnimationFrame(animate); var delta = (t-prev)/1000; prev = t; if(model){ model.rotation.x += delta * (Math.PI*2 / 4); } controls.update(); renderer.render(scene, camera); })(prev);
+            })();
+        </script>
+    </body>
+</html>
