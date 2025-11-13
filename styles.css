@@ -1,14 +1,13 @@
-/* ganz minimal */
-html,body {
+html, body {
   margin: 0;
+  padding: 0;
   height: 100%;
-  background: #0b1020;
+  background: #0b0f1a;
+  overflow: hidden;
   font-family: sans-serif;
 }
+
 #canvas-wrap {
   width: 100vw;
   height: 100vh;
-  display: block;
-  overflow: hidden;
-  position: relative;
 }
